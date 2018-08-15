@@ -1,0 +1,431 @@
+#!/usr/bin/python3
+import datetime
+import smtplib
+import time
+import urllib.request
+import sys
+import webbrowser
+import os
+from email.message import EmailMessage
+from datetime import date
+
+from bs4 import BeautifulSoup
+
+# time to wait between sending emails
+wait_time = 6
+# number of days since posting for a valid listing
+oldest_post_age = 14
+# known search models
+known_models = ["bmw", "mercedes", "wrangler"]
+# search parameter to run a search on all known models
+search_all = "$all"
+
+
+# main function to handle search execution
+def main():
+    # user-specified search model
+    model = input("[Model]: ").lower()
+    if model == search_all:
+        execute_search_all(True)
+    else:
+        execute_search(model, get_links(model), True)
+
+
+def get_links(model):
+    # search criteria for bmw
+    if model == "bmw" or model == "bimmer":
+        model = "bmw"
+        price_minimum = 5000
+        price_maximum = 9000
+        year_minimum = 2008
+        miles_minimum = 50000
+        miles_maximum = 80000
+
+    # search criteria for mercedes-benz
+    elif model == "mercedes" or model == "mb" or model == "mercedes benz" or model == "benz":
+        model = "mercedes"
+        price_minimum = 6000
+        price_maximum = 14000
+        year_minimum = 2008
+        miles_minimum = 50000
+        miles_maximum = 80000
+
+    # search criteria for jeep
+    elif model == "jeep" or model == "jeep wrangler" or model == "wrangler" or model == "jw":
+        model = "wrangler"
+        price_minimum = 3000
+        price_maximum = 8000
+        year_minimum = 1998
+        miles_minimum = 50000
+        miles_maximum = 110000
+
+    else:
+        print("[Unknown Model Given]:", model)
+        price_minimum = 6000
+        price_maximum = 12000
+        year_minimum = 2008
+        miles_minimum = 50000
+        miles_maximum = 85000
+
+    print("[Search Parameters]:", "[model: {}], [min year: {}],".format(model, str(year_minimum)) + os.linesep
+          + "  [min price: {}], [max price: {}], [min miles: {}], [max miles: {}]".format(
+        str(price_minimum), str(price_maximum), str(miles_minimum), str(miles_maximum)))
+
+    # northern new jersey search link
+    url_nnj = (("https://newjersey.craigslist.org/search/cto?auto_transmission=2&hasPic=1&min_price={0}"
+                + "&max_auto_miles={1}&max_price={2}&auto_make_model={3}&min_auto_miles={4}"
+                + "&min_auto_year={5}&auto_title_status=1").format(
+        str(price_minimum), str(miles_maximum), str(price_maximum), model, str(miles_minimum),
+        str(year_minimum)))
+    # central new jersey search link
+    url_cnj = (("https://cnj.craigslist.org/search/cto?auto_transmission=2&hasPic=1&min_price={0}"
+                + "&max_auto_miles={1}&max_price={2}&auto_make_model={3}&min_auto_miles={4}"
+                + "&min_auto_year={5}&auto_title_status=1").format(
+        str(price_minimum), str(miles_maximum), str(price_maximum), model, str(miles_minimum),
+        str(year_minimum)))
+    # southern new jersey search link
+    url_snj = (("https://southjersey.craigslist.org/search/cto?auto_transmission=2&hasPic=1&min_price={0}"
+                + "&max_auto_miles={1}&max_price={2}&auto_make_model={3}&min_auto_miles={4}"
+                + "&min_auto_year={5}&auto_title_status=1").format(
+        str(price_minimum), str(miles_maximum), str(price_maximum), model, str(miles_minimum),
+        str(year_minimum)))
+    # map of mercedes search urls
+    urls = {
+        'nnj': url_nnj,
+        'cnj': url_cnj,
+        'snj': url_snj
+    }
+
+    return urls
+
+
+# executes the search of all links in the given map, given if executed by the user
+def execute_search(model, map_urls, cli):
+    list_ads = []
+    for place, link in map_urls.items():
+        print("==" * 40)
+        print("[Parsing]:", model.upper(), place.upper())
+        # parse the html of every link
+        parse_html(list_ads, link)
+    print("[Combined Total Found:]", len(list_ads))
+    if cli:
+        # process user commands if executed from cli
+        process_command(model, list_ads, map_urls)
+    else:
+        return list_ads
+
+
+# executes the search of all links, given if executed by the user
+def execute_search_all(cli):
+    list_ads = []
+    for search in known_models:
+        map_urls = get_links(search)
+        for place, link in map_urls.items():
+            print("==" * 40)
+            print("[Parsing]:", search.upper(), place.upper())
+            # parse the html of every link
+            parse_html(list_ads, link)
+        print("[Combined Total Found:]", len(list_ads))
+    if cli:
+        search = "$all"
+        # process user commands if executed from cli
+        process_command(search, list_ads, map_urls)
+    else:
+        return list_ads
+
+
+# parses the listings of at the given url and stores the results in the given list
+def parse_html(list_ads, url):
+    # opens the url and begin parsing
+    url_open = urllib.request.urlopen(url)
+    content = url_open.read()
+    soup = BeautifulSoup(content, "html.parser")
+    rows_html = soup.find("ul", {"class": "rows"})  # all search results
+    li_html = rows_html.find_all("li", {"class": "result-row"})  # list of search results
+    count_total = 0
+    count_valid = 0
+    # parses the listings titles and creates the advertisements
+    for ad_html in li_html:
+        advertisement = dict()
+        title = ad_html.find("p").find("a").get_text()
+        ad_date = ad_html.find("time").get("datetime").split(" ")[0].split("-")
+        age = get_time_delta(int(ad_date[0]), int(ad_date[1]), int(ad_date[2]))
+        link = ad_html.find("a").get("href")
+        location = link.split(".")[0].split("//")[1]
+
+        # eliminates listing older $oldest_post_age days and listings from 'newyork' or 'philadelphia'
+        if age <= oldest_post_age and not location == "newyork" and not location == "philadelphia":
+            ad_url_open = urllib.request.urlopen(link)
+            ad_content = ad_url_open.read()
+            ad_soup = BeautifulSoup(ad_content, "html.parser")
+            attrs = ad_soup.find_all("p", {'class': 'attrgroup'})
+            ad_attr = ""
+            for attr in attrs:
+                ad_attr += (attr.get_text()[1:].replace("\n\n", "\n"))
+
+            advertisement['title'] = title
+            advertisement['location'] = location
+            advertisement['age'] = age
+            advertisement['link'] = link
+            advertisement['attributes'] = ad_attr.rstrip().title()
+
+            list_ads.append(advertisement)
+            count_valid += 1
+
+        count_total += 1
+    # print counts to the console
+    print("[Total Listings Found]:", count_total)
+    print("[Valid Listings Found]:", count_valid)
+    print("==" * 40)
+
+
+# processes user commands following a search
+def process_command(model, list_ads, urls):
+    cmd_input = input("#: ")
+    cmd = cmd_input.split(" ")
+
+    if len(cmd) > 2 and cmd[0] == "remove":
+            # command: 'remove # # #...' to remove listings from the results
+            remove_multiple(cmd_input, list_ads, cmd[1:])
+
+    elif len(cmd) == 1:
+        # command: 'quit' or 'exit' to terminate script
+        if cmd[0] == "quit" or cmd[0] == "exit":
+            sys.exit()
+        # command: 'reduce' to reduce the search results by eliminating duplicates
+        elif cmd[0] == "reduce":
+            reduce(list_ads)
+        # command: 'run' to execute a search every $wait_time hours and email the results
+        elif cmd[0] == "run":
+            recipient = input("[Recipient]: ")
+            run(model, recipient, urls, wait_time)
+        elif cmd[0] == "search":
+            main()
+        else:
+            print("[Unknown Command]:", cmd_input)
+
+    elif len(cmd) == 2:
+        # command: 'expand all' to show details of all search results
+        if cmd[0] == "expand" and cmd[1] == "all":
+            expand_all(list_ads)
+        elif cmd[0] == "run":
+            recipient = input("[Recipient]: ")
+            run(model, recipient, urls, cmd[1])
+        elif cmd[0] == "show":
+            # command: 'show all' to list all search results
+            if cmd[1] == "all":
+                show_all(list_ads)
+            # command: 'show urls' to list all search links
+            elif cmd[1] == "urls":
+                show_urls(urls)
+            # command: 'show #' to show the details of one listing
+            else:
+                show_listing(cmd_input, cmd, list_ads)
+        elif cmd[0] == "open":
+            # command: 'open all' to open all results in a web browser
+            if cmd[1] == "all":
+                open_all(list_ads)
+            # command: 'open #' to open a specific result in a web browser
+            else:
+                open_listing(cmd_input, cmd, list_ads)
+        elif cmd[0] == "remove":
+            # command: 'remove #' to remove a listing from the results
+            remove(cmd_input, list_ads, cmd[1])
+        else:
+            print("[Unknown Command]:", cmd_input)
+
+    elif len(cmd) == 3:
+        if cmd[0] == "open":
+            # command: 'open search <url name>' to open a specific search url in a web browser
+            if cmd[1] == "search":
+                open_search(cmd_input, cmd, urls)
+        # command: 'email all name@email.com' to email all search results to the given email address
+        elif cmd[0] == "email" and cmd[1] == "all":
+            email(cmd, list_ads)
+        else:
+            print("[Unknown Command]:", cmd_input)
+
+    print("==" * 40)
+    process_command(model, list_ads, urls)
+
+
+# prints all listings and their details
+def expand_all(list_ads):
+    for i in range(0, len(list_ads)):
+        print("[{:02}]".format(i + 1), "==" * 38)
+        for key, value in list_ads[i].items():
+            print("[{}]:".format(key), value)
+
+
+# prints a list of all advertisements (titles and age only)
+def show_all(list_ads):
+    print("[##]:[$AGE]: $TITLE")
+    for i in range(0, len(list_ads)):
+        print("[{:02}]:[{:02}]: {}".format(i + 1, list_ads[i]['age'], list_ads[i]['title']))
+
+
+# prints all of the given urls
+def show_urls(urls):
+    for key, value in urls.items():
+        print("[{}]: {}".format(key, value))
+
+
+# tries to print the specified listing from the list of advertisements
+def show_listing(cmd_input, cmd, list_ads):
+    try:
+        for key, value in list_ads[(int(cmd[1]) - 1)].items():
+            print("[{}]:".format(key).ljust(14), value)
+    except ValueError as e:
+        print("[Unknown Command]:", cmd_input)
+
+
+# opens all listings in the given list in a web browser
+def open_all(list_ads):
+    for ad in list_ads:
+        print("[Opening]:", ad['title'])
+        webbrowser.open(ad['link'])
+
+
+# tries to open the specified listing in a web browser
+def open_listing(cmd_input, cmd, list_ads):
+    try:
+        print("[Opening]:", list_ads[(int(cmd[1]) - 1)]['title'])
+        webbrowser.open(list_ads[(int(cmd[1]) - 1)]['link'])
+    except ValueError as e:
+        print("[Unknown Command]:", cmd_input)
+
+
+# tries to open the specified url in a web browser
+def open_search(cmd_input, cmd, urls):
+    try:
+        print("[Opening]:", cmd[2])
+        webbrowser.open(urls[cmd[2].lower()])
+    except ValueError as e:
+        print("[Unknown Command]:", cmd_input)
+
+
+# sends an email to the specified recipient containing the listings
+def email(cmd, list_ads):
+    print("[Processing Email To]:", cmd[2])
+    content = "[#]:[Age: Days Since Posting]"
+    for i in range(0, len(list_ads)):
+        content += os.linesep + os.linesep
+        content += "[{:02}]:[Age: {:02}]".format(i + 1, list_ads[i]['age'])
+        for key, value in list_ads[i].items():
+            content += os.linesep
+            content += "[{}]: {}".format(key.capitalize(), value)
+    send_mail(cmd[2], content)
+
+
+# removes the given number ad from the given list (i.e. remove item at index (num - 1) in list_ads)
+def remove(cmd_input, list_ads, num):
+    try:
+        index = int(num) - 1
+        list_ads.pop(index)
+        print("[Listing Removed]: {:02}".format(int(num)))
+        print("[Remaining Listings]: {:02}".format(len(list_ads)))
+    except ValueError as e:
+        print("[Unknown Command]:", cmd_input)
+
+
+# removes the given numbers from the given list
+def remove_multiple(cmd_input, list_ads, l_num):
+    try:
+        for i in range(0, len(l_num)):
+            l_num[i] = int(l_num[i]) - 1
+        l_num.sort(reverse=True)
+        for index in l_num:
+            list_ads.pop(index)
+            print("[Listing Removed]: {:02}".format(int(index + 1)))
+            print("[Remaining Listings]: {:02}".format(len(list_ads)))
+    except ValueError as e:
+        print(e)
+        print("[Unknown Command]:", cmd_input)
+
+
+# reduces the given list by eliminating duplicate listings (based on duplicate titles)
+def reduce(list_ads):
+    list_orig = list_ads.copy()
+    list_unique = []
+    for i in range(0, len(list_orig)):
+        if list_orig[i]['title'].lower() in list_unique:
+            list_ads.remove(list_orig[i])
+        else:
+            list_unique.append(list_orig[i]['title'].lower())
+    print("[Total Listings Remaining]: {}".format(len(list_ads)))
+
+
+# send an email to the given recipient with the given content
+def send_mail(recipient, content):
+    # login information for authentication
+    address = ""
+    password = ""
+    msg = EmailMessage()
+    # email subject, sender address, recipient address
+    msg['Subject'] = "Search Results"
+    msg['From'] = address
+    msg['To'] = recipient
+    # authenticate with account information
+    server = smtplib.SMTP(host="smtp.gmail.com", port=587)
+    server.ehlo()
+    server.starttls()
+    server.ehlo()
+    server.login(address, password)
+    # send email
+    msg.set_content(content)
+    server.sendmail(address, recipient, msg.as_string())
+    print("[Email Sent To]:", recipient)
+    server.quit()
+
+
+# executes the search every $wait_time hours and emails the results to the given recipient
+def run(model, recipient, urls, wait):
+    try:
+        global wait_time
+        wait_time = int(wait)
+        # the hour at which the script will execute a search
+        target = (datetime.datetime.now().hour + wait_time)
+        # ensures the timer resets at midnight
+        if target > 23:
+            target -= 24
+        # continues this loop until the script is stopped
+        while True:
+            check(target)
+            if model == search_all:
+                list_ads = execute_search_all(False)
+            else:
+                list_ads = execute_search(model, urls, False)
+            content = "[Total Listings Found]: {}".format(len(list_ads)) + os.linesep
+            reduce(list_ads)
+            content += "[Reduced Listings Found]: {}".format(len(list_ads)) + os.linesep
+            for i in range(0, len(list_ads)):
+                content += (("==" * 20) + os.linesep + "[{:02}] ".format(i + 1) + os.linesep)
+                for key, value in list_ads[i].items():
+                    content += ("[{}]:".format(key) + str(value) + os.linesep)
+            send_mail(recipient, content)
+            target += wait_time
+            # ensures the timer resets at midnight
+            if target > 23:
+                target -= 24
+    except ValueError as e:
+        print("[Unknown command]: run", wait)
+
+
+# gets the time difference (in days) between the given date and now
+def get_time_delta(year, month, day):
+    now = datetime.datetime.now()
+    today = date(now.year, now.month, now.day)
+    born = date(year, month, day)
+    return (today - born).days
+
+
+# pauses the script until the the targeted time
+def check(target):
+    while datetime.datetime.now().hour != target:
+        print("[Time|Target]: {:02}:{:02}|{:02}:00".format(datetime.datetime.now().hour, datetime.datetime.now().minute, target))
+        time.sleep(60 * 10)
+
+
+# executes script from command line
+if __name__ == '__main__':
+    main()
