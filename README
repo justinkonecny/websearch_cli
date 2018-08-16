@@ -18,3 +18,4 @@ all listings, the user will be prompted to enter commands (listed below) to inte
 'open search <name>': opens the specified search url (as listed from 'show urls') in the web browser 
 'remove # [#...]': removes all numbered listings from the saved list (e.g. 'remove 3 5' deletes the third and fifth listings)
 'email all <email>': emails all results to the specified email address (provided credentials are stored in send_mail())
+'exit' or 'quit': terminates the program
