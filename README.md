@@ -10,13 +10,13 @@ all listings, the user will be prompted to enter commands (listed below) to inte
 - <code>show all</code>: lists the age and title of all saved listings
 - <code>show urls</code>: lists the search urls from which the listings are pulled
 - <code>show #</code>: shows the full description of the # listing 
-  - (e.g 'show 3' displays the third listing found)
+  - (e.g '_show 3_' displays the third listing found)
 - <code>expand all</code>: shows the full description of all listings
 - <code>open #</code>: opens the # listing in the default web browser
 - <code>open all</code>: opens all listings found in the default web browser
 - <code>open search <name></code>: opens the specified search url (as listed from 'show urls') in the web browser 
 - <code>remove # [#...]</code>: removes all numbered listings from the saved list 
-  - (e.g. 'remove 3 5' deletes the third and fifth listings)
+  - (e.g. '_remove 3 5_' deletes the third and fifth listings)
 - <code>email all \<email\></code>: emails all results to the specified email address 
   - (provided credentials are stored in _send_mail(...)_)
 - <code>exit</code> or <code>quit</code>: terminates the program
