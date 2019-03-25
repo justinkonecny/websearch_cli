@@ -18,5 +18,5 @@ all listings, the user will be prompted to enter commands (listed below) to inte
 - <code>remove # [#...]</code>: removes all numbered listings from the saved list 
   - (e.g. 'remove 3 5' deletes the third and fifth listings)
 - <code>email all \<email\></code>: emails all results to the specified email address 
-  - (provided credentials are stored in send_mail())
+  - (provided credentials are stored in _send_mail(...)_)
 - <code>exit</code> or <code>quit</code>: terminates the program
