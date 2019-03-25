@@ -1,4 +1,4 @@
-# websearch
+# Python Craiglist Searcher
 Searches/parses craigslist.org for valid vehicle listings matching user criteria.<br>
 Once executed, the program prompts the user for the search model. Upon entering the model, or entering '$all', the program
 beings searching craigslist.org for listings of car models that match preset criteria (price, miles, year). The search
